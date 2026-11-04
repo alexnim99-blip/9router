@@ -1322,6 +1322,13 @@ docker pull decolua/9router:latest   # update to latest
 
 **Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
 
+### Private Hugging Face Docker Space
+
+The [Hugging Face Space deployment guide](deploy/huggingface-space/README.md)
+covers Space secrets and connecting Cline or Chatbox AI to the private
+OpenAI-compatible `/v1` endpoint. In these clients, use a Hugging Face access
+token as the API key so requests can pass the Space's private access gate.
+
 ### Environment Variables
 
 | Variable                                             | Default                                  | Description                                                                         |

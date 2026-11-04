@@ -7,6 +7,9 @@ ENV PORT=20128 \
     REQUIRE_API_KEY=true
 
 COPY space-server.js /app/space-server.js
+COPY persistence.js /app/persistence.js
+
+ENV NINE_ROUTER_PERSIST_DIR=/app/persist
 
 EXPOSE 20128
 
