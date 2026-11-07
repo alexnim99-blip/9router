@@ -28,6 +28,20 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import {
+  generateCacheKey,
+  isCacheable,
+  getCachedEntry,
+  setCachedEntry,
+  createCachedStreamResponse,
+  createCachedJsonResponse,
+  wrapStreamWithCacheRecording,
+} from "open-sse/cache/responseCache.js";
+import {
+  isAccountAvailable,
+  recordSuccess,
+  recordFailure,
+} from "open-sse/services/circuitBreaker.js";
 
 /**
  * Handle chat completion request
@@ -103,6 +117,22 @@ export async function handleChat(request, clientRawRequest = null) {
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
+
+  // Smart Response Cache Check (Exact Match)
+  const bypassCache = request?.headers?.get("x-bypass-cache") === "true";
+  const cacheKey = generateCacheKey(body);
+  if (isCacheable(body, { bypassCache })) {
+    const cached = getCachedEntry(cacheKey);
+    if (cached) {
+      log.info("CACHE", `⚡ Cache HIT for [${modelStr}] (0ms)`);
+      if (body.stream === true && cached.isStream) {
+        return createCachedStreamResponse(cached);
+      }
+      if (!body.stream && !cached.isStream) {
+        return createCachedJsonResponse(cached);
+      }
+    }
+  }
 
   const requiredCapabilities = detectRequiredCapabilities(body);
 
@@ -279,6 +309,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
 
+    // Circuit Breaker: skip tripped accounts cooling down
+    if (credentials?.connectionId && !isAccountAvailable(credentials.connectionId)) {
+      log.warn("CIRCUIT", `⚡ [${provider}] ACC:${credentials.connectionName || credentials.connectionId} cooling down (tripped), skipping`);
+      excludeConnectionIds.add(credentials.connectionId);
+      continue;
+    }
+
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -357,7 +394,39 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      recordSuccess(credentials.connectionId);
+
+      // Record to cache if cacheable
+      const bypassCache = request?.headers?.get("x-bypass-cache") === "true";
+      if (isCacheable(body, { bypassCache })) {
+        const cacheKey = generateCacheKey(body);
+        if (body.stream === true && result.response?.body) {
+          const cachedStream = wrapStreamWithCacheRecording(result.response.body, (chunks) => {
+            setCachedEntry(cacheKey, { isStream: true, chunks, model: modelStr });
+          });
+          return new Response(cachedStream, {
+            status: result.response.status,
+            statusText: result.response.statusText,
+            headers: result.response.headers,
+          });
+        } else if (!body.stream && result.response) {
+          try {
+            const cloned = result.response.clone();
+            cloned.json().then((jsonData) => {
+              setCachedEntry(cacheKey, { isStream: false, data: jsonData, model: modelStr });
+            }).catch(() => {});
+          } catch {
+            // response not cloneable
+          }
+        }
+      }
+
+      return result.response;
+    }
+
+    // Record failure in circuit breaker
+    recordFailure(credentials.connectionId, { status: result.status, error: result.error });
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
