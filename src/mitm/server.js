@@ -3,8 +3,8 @@ const http2 = require("http2");
 const tls = require("tls");
 const fs = require("fs");
 const path = require("path");
-const dns = require("dns");
-const { promisify } = require("util");
+
+
 const { execSync } = require("child_process");
 const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
 const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost, isChatRequest, extractModel } = require("./config");
@@ -73,19 +73,10 @@ try {
 
 // ── Helpers ───────────────────────────────────────────────────
 
-const cachedTargetIPs = {};
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const { resolveTargetIP } = require("../lib/network/dnsResolver");
 
-async function resolveTargetIP(hostname) {
-  const cached = cachedTargetIPs[hostname];
-  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.ip;
-  const resolver = new dns.Resolver();
-  resolver.setServers(["8.8.8.8"]);
-  const resolve4 = promisify(resolver.resolve4.bind(resolver));
-  const addresses = await resolve4(hostname);
-  cachedTargetIPs[hostname] = { ip: addresses[0], ts: Date.now() };
-  return cachedTargetIPs[hostname].ip;
-}
+
+
 
 function collectBodyRaw(req) {
   return new Promise((resolve, reject) => {
