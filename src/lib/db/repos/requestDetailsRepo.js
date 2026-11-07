@@ -175,6 +175,47 @@ export async function getRequestDetails(filter = {}) {
   const cntRow = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
   const totalItems = cntRow ? cntRow.c : 0;
 
+  // Fallback to usageHistory when requestDetails has no records
+  if (totalItems === 0) {
+    const histCntRow = db.get(`SELECT COUNT(*) as c FROM usageHistory ${where}`, params);
+    const histTotal = histCntRow ? histCntRow.c : 0;
+    if (histTotal > 0) {
+      const page = filter.page || 1;
+      const pageSize = filter.pageSize || 50;
+      const histTotalPages = Math.ceil(histTotal / pageSize);
+      const offset = (page - 1) * pageSize;
+      const histRows = db.all(
+        `SELECT id, timestamp, provider, model, connectionId, status, tokens, meta, cost, promptTokens, completionTokens FROM usageHistory ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+        [...params, pageSize, offset]
+      );
+      const histDetails = histRows.map((r) => {
+        const tokensObj = parseJson(r.tokens, {}) || {};
+        const metaObj = parseJson(r.meta, {}) || {};
+        return {
+          id: `hist-${r.id}`,
+          timestamp: r.timestamp,
+          provider: r.provider,
+          model: r.model,
+          connectionId: r.connectionId,
+          status: r.status || "ok",
+          tokens: {
+            prompt_tokens: tokensObj.prompt_tokens || tokensObj.input_tokens || r.promptTokens || 0,
+            completion_tokens: tokensObj.completion_tokens || tokensObj.output_tokens || r.completionTokens || 0,
+            cached_tokens: tokensObj.cached_tokens || tokensObj.cache_read_input_tokens || 0,
+            cache_creation_input_tokens: tokensObj.cache_creation_input_tokens || 0,
+          },
+          latency: metaObj.latency || (metaObj.duration ? { total: metaObj.duration } : {}),
+          cost: r.cost || 0,
+        };
+      });
+
+      return {
+        details: histDetails,
+        pagination: { page, pageSize, totalItems: histTotal, totalPages: histTotalPages, hasNext: page < histTotalPages, hasPrev: page > 1 },
+      };
+    }
+  }
+
   const page = filter.page || 1;
   const pageSize = filter.pageSize || 50;
   const totalPages = Math.ceil(totalItems / pageSize);
@@ -194,14 +235,42 @@ export async function getRequestDetails(filter = {}) {
 
 export async function getDistinctProviders() {
   const db = await getAdapter();
-  const rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`);
+  let rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`);
+  if (!rows || rows.length === 0) {
+    rows = db.all(`SELECT DISTINCT provider FROM usageHistory WHERE provider IS NOT NULL ORDER BY provider ASC`);
+  }
   return rows.map((r) => r.provider);
 }
 
 export async function getRequestDetailById(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
-  return row ? parseJson(row.data, null) : null;
+  if (row) return parseJson(row.data, null);
+  if (typeof id === "string" && id.startsWith("hist-")) {
+    const rawId = parseInt(id.slice(5), 10);
+    const histRow = db.get(`SELECT id, timestamp, provider, model, connectionId, status, tokens, meta, cost, promptTokens, completionTokens FROM usageHistory WHERE id = ?`, [rawId]);
+    if (histRow) {
+      const tokensObj = parseJson(histRow.tokens, {}) || {};
+      const metaObj = parseJson(histRow.meta, {}) || {};
+      return {
+        id: `hist-${histRow.id}`,
+        timestamp: histRow.timestamp,
+        provider: histRow.provider,
+        model: histRow.model,
+        connectionId: histRow.connectionId,
+        status: histRow.status || "ok",
+        tokens: {
+          prompt_tokens: tokensObj.prompt_tokens || tokensObj.input_tokens || histRow.promptTokens || 0,
+          completion_tokens: tokensObj.completion_tokens || tokensObj.output_tokens || histRow.completionTokens || 0,
+          cached_tokens: tokensObj.cached_tokens || tokensObj.cache_read_input_tokens || 0,
+          cache_creation_input_tokens: tokensObj.cache_creation_input_tokens || 0,
+        },
+        latency: metaObj.latency || (metaObj.duration ? { total: metaObj.duration } : {}),
+        cost: histRow.cost || 0,
+      };
+    }
+  }
+  return null;
 }
 
 const _shutdownHandler = async () => {

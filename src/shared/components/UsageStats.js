@@ -235,22 +235,21 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         for (const node of (nodesData?.nodes || [])) {
           nodeNameMap[node.id] = node.name;
         }
-        const seen = new Set();
-        const unique = (d?.connections || []).filter((c) => {
+        const connections = (d?.connections || []).filter((c) => {
           if (c.isActive === false) return false;
           if (!isLLMProvider(c.provider)) return false;
           if (AI_PROVIDERS[c.provider]?.hidden) return false;
-          if (seen.has(c.provider)) return false;
-          seen.add(c.provider);
           return true;
         }).map((c) => ({
           ...c,
           nodeName: nodeNameMap[c.provider] || null,
         }));
+        const connectedProviderIds = new Set(connections.map((c) => c.provider));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !p.hidden && !seen.has(p.id) && isLLMProvider(p.id))
-          .map((p) => ({ provider: p.id, name: p.name }));
-        setProviders([...unique, ...noAuthProviders]);
+          .filter((p) => p.noAuth && !p.hidden && !connectedProviderIds.has(p.id) && isLLMProvider(p.id))
+          .map((p) => ({ id: `noauth-${p.id}`, provider: p.id, name: p.name, isNoAuth: true }));
+        setProviders([...connections, ...noAuthProviders]);
+        
       })
       .catch(() => {});
   }, []);
@@ -319,6 +318,32 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     }
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [searchParams, router]);
+
+  const accountUsageMap = useMemo(() => {
+    const map = {};
+    if (!stats?.byAccount) return map;
+    for (const item of Object.values(stats.byAccount)) {
+      const connId = item.connectionId;
+      if (!connId) continue;
+      if (!map[connId]) {
+        map[connId] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cachedTokens: 0,
+          totalTokens: 0,
+          cost: 0,
+        };
+      }
+      map[connId].requests += item.requests || 0;
+      map[connId].promptTokens += item.promptTokens || 0;
+      map[connId].completionTokens += item.completionTokens || 0;
+      map[connId].cachedTokens += item.cachedTokens || 0;
+      map[connId].totalTokens += (item.promptTokens || 0) + (item.completionTokens || 0);
+      map[connId].cost += item.cost || 0;
+    }
+    return map;
+  }, [stats?.byAccount]);
 
   // Compute active table data
   const activeTableConfig = useMemo(() => {
@@ -476,6 +501,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
             providers={providers}
+            accountUsage={accountUsageMap}
             activeRequests={stats.activeRequests || []}
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
             errorProvider={stats.errorProvider || ""}

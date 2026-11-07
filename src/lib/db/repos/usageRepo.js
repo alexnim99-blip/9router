@@ -205,6 +205,7 @@ export async function getActiveRequests() {
         const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
         const match = modelKey.match(/^(.*) \((.*)\)$/);
         activeRequests.push({
+          connectionId,
           model: match ? match[1] : modelKey,
           provider: match ? match[2] : "unknown",
           account: accountName, count,
@@ -245,11 +246,15 @@ export async function saveRequestUsage(entry) {
     const db = await getAdapter();
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    entry.cost = (typeof entry.cost === "number" && entry.cost > 0) ? entry.cost : await calculateCost(entry.provider, entry.model, entry.tokens);
 
-    const tokens = entry.tokens || {};
-    const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-    const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    const tokens = entry.tokens || {
+      prompt_tokens: entry.promptTokens ?? entry.inputTokens ?? 0,
+      completion_tokens: entry.completionTokens ?? entry.outputTokens ?? 0,
+      cached_tokens: entry.cachedTokens ?? 0,
+    };
+    const promptTokens = tokens.prompt_tokens || tokens.input_tokens || entry.inputTokens || 0;
+    const completionTokens = tokens.completion_tokens || tokens.output_tokens || entry.outputTokens || 0;
 
     let inserted = false;
 
@@ -286,7 +291,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(entry.meta || (entry.duration ? { latency: { total: entry.duration } } : {})),
         ]
       );
 
@@ -414,6 +419,7 @@ export async function getUsageStats(period = "all") {
         const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
         const match = modelKey.match(/^(.*) \((.*)\)$/);
         stats.activeRequests.push({
+          connectionId,
           model: match ? match[1] : modelKey,
           provider: match ? match[2] : "unknown",
           account: accountName, count,

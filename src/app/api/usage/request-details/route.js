@@ -48,6 +48,19 @@ export async function GET(request) {
     
     const result = await getRequestDetails(filter);
 
+    let connectionMap = {};
+    try {
+      const { getProviderConnections } = await import("@/lib/db/repos/connectionsRepo.js");
+      const conns = await getProviderConnections();
+      for (const c of conns) {
+        connectionMap[c.id] = {
+          name: c.name || c.email || c.id,
+          email: c.email || "",
+          provider: c.provider,
+        };
+      }
+    } catch {}
+
     // Redact conversation payloads: the stored details include full request
     // bodies (user prompts, tool calls) and provider responses. Returning them
     // wholesale lets any dashboard-authenticated user (or, if requireLogin is
@@ -55,6 +68,10 @@ export async function GET(request) {
     // metadata (model, tokens, latency, status) but drop message content.
     const redactedDetails = (result.details || []).map((d) => {
       const redacted = { ...d };
+      if (d.connectionId && connectionMap[d.connectionId]) {
+        redacted.accountName = connectionMap[d.connectionId].name;
+        redacted.accountEmail = connectionMap[d.connectionId].email;
+      }
       for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
         if (redacted[key] !== undefined) {
           redacted[key] = { redacted: true };

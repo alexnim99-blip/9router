@@ -111,18 +111,27 @@ export default function RequestDetailsTab() {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
+  const [connections, setConnections] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
+    connectionId: "",
     startDate: "",
     endDate: ""
   });
 
   const fetchProviders = useCallback(async () => {
     try {
-      const res = await fetch("/api/usage/providers");
+      const [res, connsRes] = await Promise.all([
+        fetch("/api/usage/providers"),
+        fetch("/api/providers")
+      ]);
       const data = await res.json();
       setProviders(data.providers || []);
+      if (connsRes.ok) {
+        const connsData = await connsRes.json();
+        setConnections(connsData.connections || []);
+      }
 
       const cache = await fetchProviderNames();
       setProviderNameCache(cache.providerNameCache);
@@ -139,6 +148,7 @@ export default function RequestDetailsTab() {
         pageSize: pagination.pageSize.toString()
       });
       if (filters.provider) params.append("provider", filters.provider);
+      if (filters.connectionId) params.append("connectionId", filters.connectionId);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
 
@@ -176,13 +186,13 @@ export default function RequestDetailsTab() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ provider: "", startDate: "", endDate: "" });
+    setFilters({ provider: "", connectionId: "", startDate: "", endDate: "" });
   };
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <Card padding="md">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">Provider</label>
             <select
@@ -200,6 +210,28 @@ export default function RequestDetailsTab() {
               {providers.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2">
+            <label htmlFor="connection-filter" className="text-sm font-medium text-text-main">Account</label>
+            <select
+              id="connection-filter"
+              value={filters.connectionId}
+              onChange={(e) => setFilters({ ...filters, connectionId: e.target.value })}
+              className={cn(
+                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
+                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "w-full min-w-0 cursor-pointer"
+              )}
+              style={{ colorScheme: 'auto' }}
+            >
+              <option value="">All Accounts</option>
+              {connections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.email || c.name || c.id} {c.provider ? `(${getProviderName(c.provider, providerNameCache)})` : ""}
                 </option>
               ))}
             </select>
@@ -238,7 +270,7 @@ export default function RequestDetailsTab() {
             <Button 
               variant="ghost" 
               onClick={handleClearFilters}
-              disabled={!filters.provider && !filters.startDate && !filters.endDate}
+              disabled={!filters.provider && !filters.connectionId && !filters.startDate && !filters.endDate}
               className="w-full"
             >
               Clear Filters
@@ -254,6 +286,7 @@ export default function RequestDetailsTab() {
               <tr className="border-b border-black/5 dark:border-white/5">
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
+                <th className="text-left p-4 text-sm font-semibold text-text-main">Account</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Cached</th>
@@ -266,7 +299,7 @@ export default function RequestDetailsTab() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="10" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                       Loading...
@@ -275,7 +308,7 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="10" className="p-8 text-center text-text-muted">
                     No request details found
                   </td>
                 </tr>
@@ -290,6 +323,26 @@ export default function RequestDetailsTab() {
                     </td>
                     <td className="max-w-[260px] truncate p-4 font-mono text-sm text-text-main">
                       {detail.model}
+                    </td>
+                    <td className="max-w-[200px] truncate p-4 text-sm text-text-main">
+                      {detail.accountEmail || detail.accountName ? (
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-medium text-text-main truncate text-xs sm:text-sm" title={detail.accountEmail || detail.accountName}>
+                            {detail.accountEmail || detail.accountName}
+                          </span>
+                          {detail.accountEmail && detail.accountName && detail.accountEmail !== detail.accountName && (
+                            <span className="text-[11px] text-text-muted truncate" title={detail.accountName}>
+                              {detail.accountName}
+                            </span>
+                          )}
+                        </div>
+                      ) : detail.connectionId ? (
+                        <span className="text-text-muted font-mono text-xs truncate block" title={detail.connectionId}>
+                          {detail.connectionId}
+                        </span>
+                      ) : (
+                        <span className="text-text-muted text-xs">—</span>
+                      )}
                     </td>
                     <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
                        <span className="font-medium">
@@ -364,6 +417,21 @@ export default function RequestDetailsTab() {
                  <span className="text-text-muted">Provider:</span>{" "}
                  <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
                </div>
+              <div>
+                <span className="text-text-muted">Account:</span>{" "}
+                <span className="text-text-main font-medium">
+                  {selectedDetail.accountEmail || selectedDetail.accountName ? (
+                    <>
+                      {selectedDetail.accountEmail || selectedDetail.accountName}
+                      {selectedDetail.connectionId && (
+                        <span className="ml-2 font-mono text-xs text-text-muted">({selectedDetail.connectionId})</span>
+                      )}
+                    </>
+                  ) : (
+                    selectedDetail.connectionId || "—"
+                  )}
+                </span>
+              </div>
               <div>
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>

@@ -22,6 +22,13 @@ const FE_ACTIVE_TICK_MS = 1000;
 const KAME_PARTICLE_COUNT = 6;
 const SPARK_COUNT = 5;
 
+function fmtTokens(n) {
+  if (!n) return "0";
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
 }
@@ -30,17 +37,23 @@ function getProviderImageUrl(providerId) {
   return getProviderIconSrc(providerId);
 }
 
-// Custom provider node - rectangle with image + name
+// Custom account/provider node - rectangle with image + account email/name + provider subtitle + usage badge
 function ProviderNode({ data }) {
-  const { label, color, imageUrl, textIcon, active } = data;
+  const { label, subLabel, color, imageUrl, textIcon, active, usage } = data;
   const [imgError, setImgError] = useState(false);
+
+  const tokensText = usage?.totalTokens ? `${fmtTokens(usage.totalTokens)} tok` : null;
+  const reqsText = usage?.requests ? `${usage.requests} reqs` : null;
+  const usageBadge = tokensText && reqsText ? `${reqsText} · ${tokensText}` : (tokensText || reqsText || "0 reqs");
+
   return (
     <div
-      className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
+      className="flex flex-col gap-1 px-3.5 py-2.5 rounded-xl border-2 transition-all duration-300 bg-bg shadow-sm"
       style={{
         borderColor: active ? color : "var(--color-border)",
-        boxShadow: active ? `0 0 16px ${color}40` : "none",
-        minWidth: "150px",
+        boxShadow: active ? `0 0 18px ${color}50` : "0 2px 6px rgba(0,0,0,0.03)",
+        minWidth: "175px",
+        maxWidth: "230px",
       }}
     >
       <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
@@ -48,44 +61,62 @@ function ProviderNode({ data }) {
       <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-      {/* Provider icon */}
-      <div
-        className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
-        style={{ backgroundColor: `${color}15` }}
-      >
-        {imageUrl && !imgError ? (
-          <img
-            src={imageUrl}
-            alt={label}
-            className="w-6 h-6 rounded-sm object-contain"
-            loading="lazy"
-            decoding="async"
-            onError={() => {
-              const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
-              if (m) markProviderIconMissing(m[1]);
-              setImgError(true);
-            }}
-          />
-        ) : (
-          <span className="text-sm font-bold" style={{ color }}>{textIcon}</span>
+      <div className="flex items-center gap-2.5">
+        {/* Provider icon */}
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border border-black/5 dark:border-white/5"
+          style={{ backgroundColor: `${color}15` }}
+        >
+          {imageUrl && !imgError ? (
+            <img
+              src={imageUrl}
+              alt={label}
+              className="w-5 h-5 rounded-sm object-contain"
+              loading="lazy"
+              decoding="async"
+              onError={() => {
+                const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
+                if (m) markProviderIconMissing(m[1]);
+                setImgError(true);
+              }}
+            />
+          ) : (
+            <span className="text-xs font-bold" style={{ color }}>{textIcon}</span>
+          )}
+        </div>
+
+        {/* Account Name / Email + Provider Subtitle */}
+        <div className="flex flex-col min-w-0 flex-1">
+          <span
+            className="text-sm font-semibold truncate leading-snug"
+            style={{ color: active ? color : "var(--color-text)" }}
+            title={label}
+          >
+            {label}
+          </span>
+          {subLabel && (
+            <span className="text-[11px] text-text-muted truncate leading-tight">
+              {subLabel}
+            </span>
+          )}
+        </div>
+
+        {/* Active indicator */}
+        {active && (
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
+            <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
+          </span>
         )}
       </div>
 
-      {/* Provider name */}
-      <span
-        className="text-base font-medium truncate"
-        style={{ color: active ? color : "var(--color-text)" }}
-      >
-        {label}
-      </span>
-
-      {/* Active indicator */}
-      {active && (
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
-        </span>
-      )}
+      {/* Usage statistics badge */}
+      <div className="mt-1 pt-1.5 border-t border-border/40 flex items-center justify-between text-[11px] text-text-muted font-mono">
+        <span className="truncate">{usageBadge}</span>
+        {usage?.cost > 0 && (
+          <span className="text-warning font-semibold ml-1 shrink-0">${usage.cost.toFixed(2)}</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -104,27 +135,29 @@ function RouterNode({ data }) {
           ? "topology-router-core border-yellow-300 bg-gradient-to-br from-primary/30 via-yellow-400/20 to-cyan-400/25"
           : "border-primary bg-primary/5 shadow-md"
       }`}
+      style={{
+        boxShadow: powering
+          ? "0 0 28px rgba(234,179,8,0.55), 0 0 12px rgba(6,182,212,0.6)"
+          : "0 0 12px rgba(99,102,241,0.2)",
+      }}
     >
       <Handle type="source" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-      <img
-        src="/favicon.svg"
-        alt="9Router"
-        className={`w-6 h-6 mr-2 ${powering ? "topology-router-icon" : ""}`}
-        loading="lazy"
-        decoding="async"
-      />
-      <span className={`text-sm font-bold ${powering ? "topology-router-label text-yellow-300" : "text-primary"}`}>
-        9Router
-      </span>
-      {data.activeCount > 0 && (
-        <span className="ml-2 px-1.5 py-0.5 rounded-full bg-yellow-400 text-black text-xs font-bold topology-router-badge">
-          {data.activeCount}
+      <div className="flex items-center gap-2">
+        <span
+          className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm font-black transition-all ${
+            powering
+              ? "bg-gradient-to-br from-yellow-300 to-amber-500 text-black shadow-[0_0_12px_#fde047]"
+              : "bg-primary text-white"
+          }`}
+        >
+          9
         </span>
-      )}
+        <span className="text-base font-bold text-text">9Router</span>
+      </div>
     </div>
   );
 }
@@ -133,7 +166,6 @@ RouterNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Active: electric kame beam (multi-layer stroke + sparks). Idle/last/error: solid BaseEdge.
 function TopologyEdge({
   id,
   sourceX,
@@ -143,64 +175,41 @@ function TopologyEdge({
   sourcePosition,
   targetPosition,
   style = {},
-  data,
+  data = {},
 }) {
   const [edgePath] = getBezierPath({
     sourceX,
     sourceY,
-    sourcePosition,
     targetX,
     targetY,
+    sourcePosition,
     targetPosition,
   });
-  const active = !!data?.active;
-  const stroke = style.stroke || "var(--color-border)";
-  const filterId = `topo-electric-${id}`;
+
+  const active = !!data.active;
 
   if (!active) {
-    return <BaseEdge id={id} path={edgePath} style={{ ...style, stroke }} />;
+    return <BaseEdge id={id} path={edgePath} style={style} />;
   }
 
   return (
-    <g className="topology-edge-electric">
-      <defs>
-        <filter id={filterId} x="-40%" y="-40%" width="180%" height="180%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="2" result="noise">
-            <animate attributeName="baseFrequency" values="0.8;1.4;0.8" dur="0.25s" repeatCount="indefinite" />
-          </feTurbulence>
-          <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.5" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-      </defs>
-      {/* Outer electric halo */}
+    <g>
       <path
         d={edgePath}
         fill="none"
-        stroke="#22d3ee"
-        strokeWidth={10}
-        strokeOpacity={0.35}
-        strokeLinecap="round"
-        filter={`url(#${filterId})`}
-        className="topology-edge-halo"
+        style={{ stroke: "#06b6d4", strokeWidth: 10, opacity: 0.25, filter: "blur(4px)" }}
       />
-      {/* Mid plasma */}
       <path
         d={edgePath}
         fill="none"
-        stroke="#4ade80"
-        strokeWidth={5}
-        strokeOpacity={0.85}
-        strokeLinecap="round"
-        filter={`url(#${filterId})`}
-        className="topology-edge-plasma"
+        style={{ stroke: "#38bdf8", strokeWidth: 5, opacity: 0.6 }}
       />
-      {/* Hot white core */}
-      <BaseEdge
-        id={id}
-        path={edgePath}
+      <path
+        d={edgePath}
+        fill="none"
         style={{ stroke: "#f8fafc", strokeWidth: 2.2, opacity: 1 }}
         className="topology-edge-kame"
       />
-      {/* Energy orbs */}
       {Array.from({ length: KAME_PARTICLE_COUNT }, (_, i) => (
         <circle
           key={`${id}-p-${i}`}
@@ -217,7 +226,6 @@ function TopologyEdge({
           />
         </circle>
       ))}
-      {/* Electric sparks (short-lived blink along path) */}
       {Array.from({ length: SPARK_COUNT }, (_, i) => (
         <circle
           key={`${id}-s-${i}`}
@@ -260,19 +268,18 @@ const nodeTypes = { provider: ProviderNode, router: RouterNode };
 const edgeTypes = { topology: TopologyEdge };
 
 // Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet) {
-  const nodeW = 180;
-  const nodeH = 30;
+function buildLayout(providers, activeSet, lastSet, errorSet, accountUsage = {}) {
+  const nodeW = 195;
+  const nodeH = 76;
   const routerW = 120;
   const routerH = 44;
   const nodeGap = 24;
 
   const count = providers.length;
 
-  // Compute rx so arc spacing between nodes >= nodeW + nodeGap
   const minRx = ((nodeW + nodeGap) * count) / (2 * Math.PI);
-  const rx = Math.max(320, minRx);
-  const ry = Math.max(200, rx * 0.55); // ellipse ratio ~0.55
+  const rx = Math.max(340, minRx);
+  const ry = Math.max(220, rx * 0.58);
   if (count === 0) {
     return {
       nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: 0 }, draggable: false }],
@@ -300,16 +307,25 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 
   providers.forEach((p, i) => {
     const config = getProviderConfig(p.provider);
-    const active = activeSet.has(p.provider?.toLowerCase());
-    const last = !active && lastSet.has(p.provider?.toLowerCase());
-    const error = !active && errorSet.has(p.provider?.toLowerCase());
-    const nodeId = `provider-${p.provider}`;
+    const connId = p.id || p.provider;
+    const active = activeSet.has(connId) || activeSet.has(p.provider?.toLowerCase());
+    const last = !active && (lastSet.has(connId) || lastSet.has(p.provider?.toLowerCase()));
+    const error = !active && (errorSet.has(connId) || errorSet.has(p.provider?.toLowerCase()));
+    const nodeId = `conn-${connId}`;
+
+    const usage = accountUsage?.[p.id] || accountUsage?.[p.provider] || null;
+    const providerName = config.name || p.nodeName || p.provider;
+    const accountLabel = p.email || p.name || p.connectionName || providerName;
+    const subLabel = (p.email || p.name) ? providerName : null;
+
     const data = {
-      label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
+      label: accountLabel,
+      subLabel,
       color: config.color || "#6b7280",
       imageUrl: getProviderImageUrl(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
       active,
+      usage,
     };
 
     // Distribute evenly starting from top (−π/2), clockwise
@@ -317,7 +333,6 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     const cx = rx * Math.cos(angle);
     const cy = ry * Math.sin(angle);
 
-    // Pick router handle closest to the node direction
     let sourceHandle, targetHandle;
     if (Math.abs(angle + Math.PI / 2) < Math.PI / 4 || Math.abs(angle - 3 * Math.PI / 2) < Math.PI / 4) {
       sourceHandle = "top"; targetHandle = "bottom";
@@ -344,7 +359,6 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       sourceHandle,
       target: nodeId,
       targetHandle,
-      // Built-in animated uses stroke-dasharray (CPU-heavy); use particle beam instead
       animated: false,
       data: { active },
       style: edgeStyle(active, last, error),
@@ -354,20 +368,24 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
   return { nodes, edges };
 }
 
-export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
-  // Serialize to stable string keys so useMemo only re-runs when values actually change
-  const activeKey = useMemo(
-    () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
+export default function ProviderTopology({
+  providers = [],
+  accountUsage = {},
+  activeRequests = [],
+  lastProvider = "",
+  errorProvider = "",
+}) {
+  const activeConnKey = useMemo(
+    () => activeRequests.map((r) => r.connectionId || r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
     [activeRequests]
   );
   const lastKey = lastProvider?.toLowerCase() || "";
   const errorKey = errorProvider?.toLowerCase() || "";
 
-  const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
+  const rawActiveSet = useMemo(() => new Set(activeConnKey ? activeConnKey.split(",") : []), [activeConnKey]);
   const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
   const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
 
-  // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
   const [tick, setTick] = useState(0);
 
@@ -399,48 +417,52 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, [rawActiveSet, tick]);
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastSet, errorSet]
+    () => buildLayout(providers, activeSet, lastSet, errorSet, accountUsage),
+    [providers, activeSet, lastSet, errorSet, accountUsage]
   );
 
-  // Stable key — only remount when provider list changes
   const providersKey = useMemo(
-    () => providers.map((p) => p.provider).sort().join(","),
+    () => providers.map((p) => p.id || p.provider).join(","),
     [providers]
   );
 
-  const rfInstance = useRef(null);
   const containerRef = useRef(null);
-  const fitOpts = { padding: 0.2, duration: 200 };
+  const rfInstance = useRef(null);
+  const fitOpts = useMemo(() => ({ padding: 0.15, duration: 400 }), []);
+
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
     setTimeout(() => instance.fitView(fitOpts), 50);
-  }, []);
+  }, [fitOpts]);
 
-  // Re-fit on container resize
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+    if (!containerRef.current) return;
+    let resizeTimer = null;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+      }, 100);
     });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    observer.observe(containerRef.current);
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimer);
+    };
+  }, [fitOpts]);
 
-  // Re-fit when node count/layout changes
   useEffect(() => {
     if (rfInstance.current) {
       const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
       return () => clearTimeout(id);
     }
-  }, [nodes.length]);
+  }, [nodes.length, fitOpts]);
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
+    <div ref={containerRef} className="h-[340px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
-          No providers connected
+          No accounts connected
         </div>
       ) : (
         <ReactFlow
@@ -476,8 +498,11 @@ ProviderTopology.propTypes = {
     id: PropTypes.string,
     provider: PropTypes.string,
     name: PropTypes.string,
+    email: PropTypes.string,
   })),
+  accountUsage: PropTypes.object,
   activeRequests: PropTypes.arrayOf(PropTypes.shape({
+    connectionId: PropTypes.string,
     provider: PropTypes.string,
     model: PropTypes.string,
     account: PropTypes.string,
