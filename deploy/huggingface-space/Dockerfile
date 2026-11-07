@@ -8,6 +8,11 @@ ENV PORT=20128 \
 
 COPY space-server.js /app/space-server.js
 COPY persistence.js /app/persistence.js
+COPY open-sse/utils/dnsResolver.js /app/open-sse/utils/dnsResolver.js
+COPY open-sse/utils/proxyFetch.js /app/open-sse/utils/proxyFetch.js
+COPY src/lib/network/dnsResolver.js /app/src/lib/network/dnsResolver.js
+COPY src/mitm/server.js /app/src/mitm/server.js
+COPY src/lib/tunnel/shared/dnsResolver.js /app/src/lib/tunnel/shared/dnsResolver.js
 
 ENV NINE_ROUTER_PERSIST_DIR=/app/persist
 
