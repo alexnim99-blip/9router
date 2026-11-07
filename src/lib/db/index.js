@@ -69,6 +69,11 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Response cache
+export {
+  getCacheEntry, setCacheEntry, deleteCacheEntry, clearCache, pruneExpiredCache, getCacheStats,
+} from "./repos/responseCacheRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();

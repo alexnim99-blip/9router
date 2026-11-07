@@ -32,6 +32,7 @@ import {
   generateCacheKey,
   isCacheable,
   getCachedEntry,
+  getCachedEntryAsync,
   setCachedEntry,
   createCachedStreamResponse,
   createCachedJsonResponse,
@@ -42,6 +43,18 @@ import {
   recordSuccess,
   recordFailure,
 } from "open-sse/services/circuitBreaker.js";
+import {
+  checkRateLimitAndBudget,
+  recordTokenUsage,
+} from "open-sse/services/tokenBudgetGuard.js";
+import {
+  pruneContextIfNeeded,
+  estimateTokenCount,
+} from "open-sse/services/contextPruner.js";
+import {
+  redactSecretsInBody,
+  isDlpEnabled,
+} from "open-sse/services/dlpRedactor.js";
 
 /**
  * Handle chat completion request
@@ -118,11 +131,29 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
-  // Smart Response Cache Check (Exact Match)
+  // Data Loss Prevention (DLP) & Secret Redactor (Phase 3)
+  if (isDlpEnabled()) {
+    const dlpResult = redactSecretsInBody(body);
+    if (dlpResult.redactedCount > 0) {
+      log.warn("DLP", `🛡️ Redacted ${dlpResult.redactedCount} sensitive credential(s) (${dlpResult.redactedTypes.join(", ")}) in prompt for [${modelStr}]`);
+      body = dlpResult.body;
+    }
+  }
+
+  // Rate Limit & Runaway Loop Guard (Phase 2)
+  const clientIdentifier = apiKey || sessionId || "anonymous";
+  const estimatedTokens = estimateTokenCount(body.messages);
+  const budgetCheck = checkRateLimitAndBudget(clientIdentifier, estimatedTokens, body);
+  if (!budgetCheck.allowed) {
+    log.warn("BUDGET", `⛔ ${budgetCheck.reason}`);
+    return errorResponse(HTTP_STATUS.TOO_MANY_REQUESTS, budgetCheck.reason);
+  }
+
+  // Smart Response Cache Check (Exact Match & SQLite / Hybrid L1/L2)
   const bypassCache = request?.headers?.get("x-bypass-cache") === "true";
   const cacheKey = generateCacheKey(body);
   if (isCacheable(body, { bypassCache })) {
-    const cached = getCachedEntry(cacheKey);
+    const cached = await getCachedEntryAsync(cacheKey);
     if (cached) {
       log.info("CACHE", `⚡ Cache HIT for [${modelStr}] (0ms)`);
       if (body.stream === true && cached.isStream) {
@@ -300,6 +331,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
+  // Adaptive Context Window Pruning (Phase 2)
+  const pruneResult = pruneContextIfNeeded(body);
+  if (pruneResult.pruned) {
+    log.warn("PRUNER", `✂️ Context auto-pruned for [${modelStr}]: ${pruneResult.originalTokens} -> ${pruneResult.prunedTokens} tokens (saved ${pruneResult.savedTokens} tokens)`);
+    body = pruneResult.body;
+  }
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
@@ -396,6 +434,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) {
       recordSuccess(credentials.connectionId);
+      recordTokenUsage(apiKey || "anonymous", pruneResult?.prunedTokens || 150);
 
       // Record to cache if cacheable
       const bypassCache = request?.headers?.get("x-bypass-cache") === "true";
