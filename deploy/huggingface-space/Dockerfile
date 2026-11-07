@@ -10,9 +10,12 @@ COPY space-server.js /app/space-server.js
 COPY persistence.js /app/persistence.js
 COPY open-sse/utils/dnsResolver.js /app/open-sse/utils/dnsResolver.js
 COPY open-sse/utils/proxyFetch.js /app/open-sse/utils/proxyFetch.js
+COPY open-sse/cache/responseCache.js /app/open-sse/cache/responseCache.js
+COPY open-sse/services/circuitBreaker.js /app/open-sse/services/circuitBreaker.js
 COPY src/lib/network/dnsResolver.js /app/src/lib/network/dnsResolver.js
 COPY src/mitm/server.js /app/src/mitm/server.js
 COPY src/lib/tunnel/shared/dnsResolver.js /app/src/lib/tunnel/shared/dnsResolver.js
+COPY src/sse/handlers/chat.js /app/src/sse/handlers/chat.js
 
 ENV NINE_ROUTER_PERSIST_DIR=/app/persist
 
