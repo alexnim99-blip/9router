@@ -167,6 +167,28 @@ export async function getRequestDetails(filter = {}) {
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }
+  const emailFilter = filter.accountEmail || filter.email;
+  if (emailFilter) {
+    const cleanEmail = String(emailFilter).trim().toLowerCase();
+    try {
+      const matchingConns = db.all(
+        `SELECT id FROM providerConnections WHERE LOWER(COALESCE(email, '')) = ? OR LOWER(COALESCE(name, '')) = ? OR data LIKE ?`,
+        [cleanEmail, cleanEmail, `%${cleanEmail}%`]
+      );
+      const matchingIds = matchingConns.map((r) => r.id);
+      if (matchingIds.length > 0) {
+        const placeholders = matchingIds.map(() => "?").join(",");
+        conds.push(`connectionId IN (${placeholders})`);
+        params.push(...matchingIds);
+      } else {
+        conds.push("(LOWER(connectionId) = ? OR LOWER(connectionId) LIKE ?)");
+        params.push(cleanEmail, `%${cleanEmail}%`);
+      }
+    } catch {
+      conds.push("(LOWER(connectionId) = ? OR LOWER(connectionId) LIKE ?)");
+      params.push(cleanEmail, `%${cleanEmail}%`);
+    }
+  }
   if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
