@@ -178,14 +178,14 @@ export async function getRequestDetails(filter = {}) {
       const matchingIds = matchingConns.map((r) => r.id);
       if (matchingIds.length > 0) {
         const placeholders = matchingIds.map(() => "?").join(",");
-        conds.push(`connectionId IN (${placeholders})`);
-        params.push(...matchingIds);
+        conds.push(`(connectionId IN (${placeholders}) OR LOWER(COALESCE(connectionId, '')) = ? OR LOWER(COALESCE(connectionId, '')) LIKE ?)`);
+        params.push(...matchingIds, cleanEmail, `%${cleanEmail}%`);
       } else {
-        conds.push("(LOWER(connectionId) = ? OR LOWER(connectionId) LIKE ?)");
+        conds.push("(LOWER(COALESCE(connectionId, '')) = ? OR LOWER(COALESCE(connectionId, '')) LIKE ?)");
         params.push(cleanEmail, `%${cleanEmail}%`);
       }
     } catch {
-      conds.push("(LOWER(connectionId) = ? OR LOWER(connectionId) LIKE ?)");
+      conds.push("(LOWER(COALESCE(connectionId, '')) = ? OR LOWER(COALESCE(connectionId, '')) LIKE ?)");
       params.push(cleanEmail, `%${cleanEmail}%`);
     }
   }

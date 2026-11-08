@@ -25,6 +25,7 @@ COPY src/lib/db/repos/responseCacheRepo.js /app/src/lib/db/repos/responseCacheRe
 COPY src/sse/handlers/chat.js /app/src/sse/handlers/chat.js
 COPY src/lib/db/repos/settingsRepo.js /app/src/lib/db/repos/settingsRepo.js
 COPY src/lib/db/repos/requestDetailsRepo.js /app/src/lib/db/repos/requestDetailsRepo.js
+COPY src/lib/db/repos/connectionsRepo.js /app/src/lib/db/repos/connectionsRepo.js
 COPY src/lib/db/repos/usageRepo.js /app/src/lib/db/repos/usageRepo.js
 COPY src/app/api/usage/request-details/route.js /app/src/app/api/usage/request-details/route.js
 COPY src/shared/components/UsageStats.js /app/src/shared/components/UsageStats.js

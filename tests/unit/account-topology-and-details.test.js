@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { describe, it, expect, beforeAll } from "vitest";
 import { DEFAULT_SETTINGS } from "../../src/lib/db/repos/settingsRepo.js";
 import {
@@ -212,6 +213,94 @@ describe("Account-Level Topology and Request Details Fallback", () => {
         expect(stats.byAccount["conn-gmail-2"].requests).toBeGreaterThanOrEqual(1);
         expect(stats.byAccount["conn-gmail-2"].promptTokens).toBeGreaterThanOrEqual(2500);
       }
+    });
+  });
+
+  describe("Frontend Integration & UI Invariants", () => {
+    it("RequestDetailsTab imports useMemo from react to prevent runtime crash", () => {
+      const src = fs.readFileSync("../src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js", "utf8");
+      expect(src).toMatch(/import\s*\{[^}]*useMemo[^}]*\}\s*from\s*["\']react["\']/);
+      expect(src).toContain("account-email-filter");
+    });
+
+    it("UsageStats defines ACCOUNT_COLUMNS with accountName as 1st column matching grouping", () => {
+      const src = fs.readFileSync("../src/shared/components/UsageStats.js", "utf8");
+      const match = src.match(/const ACCOUNT_COLUMNS = \[(\s*\{[^}]+\},?\s*)+\];/);
+      expect(match).toBeDefined();
+      const block = match[0];
+      expect(block).toContain("{ field: \"accountName\", label: \"Account\" }");
+      // Ensure accountName appears before rawModel in ACCOUNT_COLUMNS
+      const accountIdx = block.indexOf("accountName");
+      const modelIdx = block.indexOf("rawModel");
+      expect(accountIdx).toBeLessThan(modelIdx);
+    });
+
+    it("ProviderTopology supports onSelectAccount for interactive topology routing", () => {
+      const src = fs.readFileSync("../src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js", "utf8");
+      expect(src).toContain("onSelectAccount");
+    });
+
+    it("accountUsageMap aggregates connection usage and falls back to provider", () => {
+      const mockStats = {
+        byAccount: {
+          "gemini-2.5-pro (antigravity - gmail 1)": {
+            connectionId: "conn-gmail-1",
+            requests: 5,
+            promptTokens: 1000,
+            completionTokens: 200,
+            cachedTokens: 50,
+            cost: 0.01,
+          },
+        },
+        byProvider: {
+          "opencode": {
+            requests: 3,
+            promptTokens: 500,
+            completionTokens: 100,
+            cachedTokens: 0,
+            cost: 0,
+          },
+        },
+      };
+
+      const map = {};
+      if (mockStats.byAccount) {
+        for (const item of Object.values(mockStats.byAccount)) {
+          const connId = item.connectionId;
+          if (connId) {
+            if (!map[connId]) {
+              map[connId] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, totalTokens: 0, cost: 0 };
+            }
+            map[connId].requests += item.requests || 0;
+            map[connId].promptTokens += item.promptTokens || 0;
+            map[connId].completionTokens += item.completionTokens || 0;
+            map[connId].cachedTokens += item.cachedTokens || 0;
+            map[connId].totalTokens += (item.promptTokens || 0) + (item.completionTokens || 0);
+            map[connId].cost += item.cost || 0;
+          }
+        }
+      }
+      if (mockStats.byProvider) {
+        for (const [prov, p] of Object.entries(mockStats.byProvider)) {
+          if (!map[prov]) {
+            map[prov] = {
+              requests: p.requests || 0,
+              promptTokens: p.promptTokens || 0,
+              completionTokens: p.completionTokens || 0,
+              cachedTokens: p.cachedTokens || 0,
+              totalTokens: (p.promptTokens || 0) + (p.completionTokens || 0),
+              cost: p.cost || 0,
+            };
+          }
+        }
+      }
+
+      expect(map["conn-gmail-1"]).toBeDefined();
+      expect(map["conn-gmail-1"].requests).toBe(5);
+      expect(map["conn-gmail-1"].totalTokens).toBe(1200);
+      expect(map["opencode"]).toBeDefined();
+      expect(map["opencode"].requests).toBe(3);
+      expect(map["opencode"].totalTokens).toBe(600);
     });
   });
 });

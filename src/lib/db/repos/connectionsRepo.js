@@ -41,7 +41,7 @@ function rowToConn(row) {
     provider: row.provider,
     authType: row.authType,
     name: row.name,
-    email: row.email,
+    email: row.email || extra.email || (extra.profile?.email) || null,
     priority: row.priority,
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,

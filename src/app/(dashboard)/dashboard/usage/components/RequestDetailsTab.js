@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
@@ -113,10 +114,15 @@ export default function RequestDetailsTab() {
   const [providers, setProviders] = useState([]);
   const [connections, setConnections] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
+  const searchParams = useSearchParams();
+  const initialEmail = searchParams?.get("accountEmail") || searchParams?.get("email") || "";
+  const initialProvider = searchParams?.get("provider") || "";
+  const initialConnectionId = searchParams?.get("connectionId") || "";
+
   const [filters, setFilters] = useState({
-    provider: "",
-    accountEmail: "",
-    connectionId: "",
+    provider: initialProvider,
+    accountEmail: initialEmail,
+    connectionId: initialConnectionId,
     startDate: "",
     endDate: ""
   });
@@ -125,13 +131,18 @@ export default function RequestDetailsTab() {
     const emails = new Set();
     for (const c of connections) {
       if (c.email) emails.add(c.email.trim());
+      else if (c.data?.email) emails.add(c.data.email.trim());
+      else if (c.providerSpecificData?.email) emails.add(c.providerSpecificData.email.trim());
       else if (c.name && c.name.includes("@")) emails.add(c.name.trim());
     }
     for (const d of details) {
       if (d.accountEmail) emails.add(d.accountEmail.trim());
     }
+    if (initialEmail && initialEmail.includes("@")) {
+      emails.add(initialEmail.trim());
+    }
     return Array.from(emails).sort();
-  }, [connections, details]);
+  }, [connections, details, initialEmail]);
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -243,6 +254,11 @@ export default function RequestDetailsTab() {
               style={{ colorScheme: 'auto' }}
             >
               <option value="">All Account Emails</option>
+              {filters.accountEmail && !uniqueEmails.includes(filters.accountEmail) && (
+                <option value={filters.accountEmail}>
+                  {filters.accountEmail}
+                </option>
+              )}
               {uniqueEmails.map((email) => (
                 <option key={email} value={email}>
                   {email}

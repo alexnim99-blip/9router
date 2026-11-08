@@ -55,9 +55,10 @@ export async function GET(request) {
       const { getProviderConnections } = await import("@/lib/db/repos/connectionsRepo.js");
       const conns = await getProviderConnections();
       for (const c of conns) {
+        const email = c.email || (c.name && c.name.includes("@") ? c.name : "") || (c.data?.email || "");
         connectionMap[c.id] = {
-          name: c.name || c.email || c.id,
-          email: c.email || "",
+          name: c.name || email || c.id,
+          email: email,
           provider: c.provider,
         };
       }
@@ -70,9 +71,14 @@ export async function GET(request) {
     // metadata (model, tokens, latency, status) but drop message content.
     const redactedDetails = (result.details || []).map((d) => {
       const redacted = { ...d };
-      if (d.connectionId && connectionMap[d.connectionId]) {
-        redacted.accountName = connectionMap[d.connectionId].name;
-        redacted.accountEmail = connectionMap[d.connectionId].email;
+      if (d.connectionId) {
+        if (connectionMap[d.connectionId]) {
+          redacted.accountName = connectionMap[d.connectionId].name;
+          redacted.accountEmail = connectionMap[d.connectionId].email;
+        } else if (d.connectionId.includes("@")) {
+          redacted.accountEmail = d.connectionId;
+          redacted.accountName = d.connectionId;
+        }
       }
       for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
         if (redacted[key] !== undefined) {

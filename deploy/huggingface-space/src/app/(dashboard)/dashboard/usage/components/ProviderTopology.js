@@ -268,7 +268,7 @@ const nodeTypes = { provider: ProviderNode, router: RouterNode };
 const edgeTypes = { topology: TopologyEdge };
 
 // Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet, accountUsage = {}) {
+function buildLayout(providers, activeSet, lastSet, errorSet, accountUsage = {}, onSelectAccount = null) {
   const nodeW = 195;
   const nodeH = 76;
   const routerW = 120;
@@ -417,8 +417,8 @@ export default function ProviderTopology({
   }, [rawActiveSet, tick]);
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet, accountUsage),
-    [providers, activeSet, lastSet, errorSet, accountUsage]
+    () => buildLayout(providers, activeSet, lastSet, errorSet, accountUsage, onSelectAccount),
+    [providers, activeSet, lastSet, errorSet, accountUsage, onSelectAccount]
   );
 
   const providersKey = useMemo(

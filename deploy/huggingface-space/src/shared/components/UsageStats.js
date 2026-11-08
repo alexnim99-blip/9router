@@ -164,9 +164,9 @@ const MODEL_COLUMNS = [
 ];
 
 const ACCOUNT_COLUMNS = [
+  { field: "accountName", label: "Account" },
   { field: "rawModel", label: "Model" },
   { field: "provider", label: "Provider" },
-  { field: "accountName", label: "Account" },
   { field: "requests", label: "Requests", align: "right" },
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
@@ -319,31 +319,67 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [searchParams, router]);
 
+  const topologyProviders = useMemo(() => {
+    const list = [...providers];
+    const seenIds = new Set(list.map((p) => p.id));
+    if (stats?.byAccount) {
+      for (const item of Object.values(stats.byAccount)) {
+        const connId = item.connectionId;
+        if (connId && !seenIds.has(connId)) {
+          seenIds.add(connId);
+          list.push({
+            id: connId,
+            provider: item.provider?.toLowerCase() || "unknown",
+            name: item.accountName || `Account ${connId.slice(0, 8)}...`,
+            email: item.accountName?.includes("@") ? item.accountName : null,
+          });
+        }
+      }
+    }
+    return list;
+  }, [providers, stats?.byAccount]);
+
   const accountUsageMap = useMemo(() => {
     const map = {};
-    if (!stats?.byAccount) return map;
-    for (const item of Object.values(stats.byAccount)) {
-      const connId = item.connectionId;
-      if (!connId) continue;
-      if (!map[connId]) {
-        map[connId] = {
-          requests: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cachedTokens: 0,
-          totalTokens: 0,
-          cost: 0,
-        };
+    if (stats?.byAccount) {
+      for (const item of Object.values(stats.byAccount)) {
+        const connId = item.connectionId;
+        if (connId) {
+          if (!map[connId]) {
+            map[connId] = {
+              requests: 0,
+              promptTokens: 0,
+              completionTokens: 0,
+              cachedTokens: 0,
+              totalTokens: 0,
+              cost: 0,
+            };
+          }
+          map[connId].requests += item.requests || 0;
+          map[connId].promptTokens += item.promptTokens || 0;
+          map[connId].completionTokens += item.completionTokens || 0;
+          map[connId].cachedTokens += item.cachedTokens || 0;
+          map[connId].totalTokens += (item.promptTokens || 0) + (item.completionTokens || 0);
+          map[connId].cost += item.cost || 0;
+        }
       }
-      map[connId].requests += item.requests || 0;
-      map[connId].promptTokens += item.promptTokens || 0;
-      map[connId].completionTokens += item.completionTokens || 0;
-      map[connId].cachedTokens += item.cachedTokens || 0;
-      map[connId].totalTokens += (item.promptTokens || 0) + (item.completionTokens || 0);
-      map[connId].cost += item.cost || 0;
+    }
+    if (stats?.byProvider) {
+      for (const [prov, p] of Object.entries(stats.byProvider)) {
+        if (!map[prov]) {
+          map[prov] = {
+            requests: p.requests || 0,
+            promptTokens: p.promptTokens || 0,
+            completionTokens: p.completionTokens || 0,
+            cachedTokens: p.cachedTokens || 0,
+            totalTokens: (p.promptTokens || 0) + (p.completionTokens || 0),
+            cost: p.cost || 0,
+          };
+        }
+      }
     }
     return map;
-  }, [stats?.byAccount]);
+  }, [stats?.byAccount, stats?.byProvider]);
 
   // Compute active table data
   const activeTableConfig = useMemo(() => {
@@ -500,7 +536,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {loading ? spinner : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
-            providers={providers}
+            providers={topologyProviders}
             accountUsage={accountUsageMap}
             activeRequests={stats.activeRequests || []}
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
