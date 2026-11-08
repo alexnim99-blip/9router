@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { DEFAULT_SETTINGS } from "../../src/lib/db/repos/settingsRepo.js";
 import {
   saveRequestUsage,
@@ -11,13 +11,37 @@ import {
   getActiveRequests,
   getUsageStats,
 } from "../../src/lib/db/repos/usageRepo.js";
+import { getAdapter } from "../../src/lib/db/driver.js";
 
 describe("Account-Level Topology and Request Details Fallback", () => {
   it("enableObservability defaults to true in DEFAULT_SETTINGS", () => {
     expect(DEFAULT_SETTINGS.enableObservability).toBe(true);
   });
 
-  describe("requestDetails fallback to usageHistory", () => {
+  describe("requestDetails fallback to usageHistory and Account Email filtering", () => {
+    beforeAll(async () => {
+      const db = await getAdapter();
+      // Ensure providerConnections table has test connection for email mapping
+      try {
+        db.run(
+          `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, data)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            "conn-gmail-1",
+            "antigravity",
+            "oauth",
+            "gmail 1 Antigravity",
+            "alexnim99@gmail.com",
+            1,
+            1,
+            new Date().toISOString(),
+            new Date().toISOString(),
+            JSON.stringify({ email: "alexnim99@gmail.com" }),
+          ]
+        );
+      } catch {}
+    });
+
     it("returns records from usageHistory when requestDetails has no entries", async () => {
       const now = new Date().toISOString();
       await saveRequestUsage({
@@ -86,6 +110,19 @@ describe("Account-Level Topology and Request Details Fallback", () => {
       expect(item.status).toBe("success");
     });
 
+    it("filters usageHistory fallback by accountEmail", async () => {
+      const result = await getRequestDetails({
+        page: 1,
+        pageSize: 10,
+        accountEmail: "alexnim99@gmail.com",
+      });
+
+      expect(result.details.length).toBeGreaterThanOrEqual(1);
+      for (const d of result.details) {
+        expect(d.connectionId).toBe("conn-gmail-1");
+      }
+    });
+
     it("filters usageHistory fallback by connectionId", async () => {
       const result = await getRequestDetails({
         page: 1,
@@ -109,6 +146,21 @@ describe("Account-Level Topology and Request Details Fallback", () => {
       expect(result.details.length).toBeGreaterThanOrEqual(1);
       for (const d of result.details) {
         expect(d.provider).toBe("claude");
+      }
+    });
+
+    it("filters by both provider and accountEmail simultaneously", async () => {
+      const result = await getRequestDetails({
+        page: 1,
+        pageSize: 10,
+        provider: "antigravity",
+        accountEmail: "alexnim99@gmail.com",
+      });
+
+      expect(result.details.length).toBeGreaterThanOrEqual(1);
+      for (const d of result.details) {
+        expect(d.provider).toBe("antigravity");
+        expect(d.connectionId).toBe("conn-gmail-1");
       }
     });
 

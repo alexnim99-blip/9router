@@ -115,10 +115,23 @@ export default function RequestDetailsTab() {
   const [providerNameCache, setProviderNameCache] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
+    accountEmail: "",
     connectionId: "",
     startDate: "",
     endDate: ""
   });
+
+  const uniqueEmails = useMemo(() => {
+    const emails = new Set();
+    for (const c of connections) {
+      if (c.email) emails.add(c.email.trim());
+      else if (c.name && c.name.includes("@")) emails.add(c.name.trim());
+    }
+    for (const d of details) {
+      if (d.accountEmail) emails.add(d.accountEmail.trim());
+    }
+    return Array.from(emails).sort();
+  }, [connections, details]);
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -148,6 +161,7 @@ export default function RequestDetailsTab() {
         pageSize: pagination.pageSize.toString()
       });
       if (filters.provider) params.append("provider", filters.provider);
+      if (filters.accountEmail) params.append("accountEmail", filters.accountEmail);
       if (filters.connectionId) params.append("connectionId", filters.connectionId);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
@@ -186,7 +200,7 @@ export default function RequestDetailsTab() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ provider: "", connectionId: "", startDate: "", endDate: "" });
+    setFilters({ provider: "", accountEmail: "", connectionId: "", startDate: "", endDate: "" });
   };
 
   return (
@@ -216,11 +230,11 @@ export default function RequestDetailsTab() {
           </div>
 
           <div className="flex min-w-0 flex-col gap-2">
-            <label htmlFor="connection-filter" className="text-sm font-medium text-text-main">Account</label>
+            <label htmlFor="account-email-filter" className="text-sm font-medium text-text-main">Account Email</label>
             <select
-              id="connection-filter"
-              value={filters.connectionId}
-              onChange={(e) => setFilters({ ...filters, connectionId: e.target.value })}
+              id="account-email-filter"
+              value={filters.accountEmail}
+              onChange={(e) => setFilters({ ...filters, accountEmail: e.target.value, connectionId: "" })}
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
                 "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
@@ -228,10 +242,10 @@ export default function RequestDetailsTab() {
               )}
               style={{ colorScheme: 'auto' }}
             >
-              <option value="">All Accounts</option>
-              {connections.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.email || c.name || c.id} {c.provider ? `(${getProviderName(c.provider, providerNameCache)})` : ""}
+              <option value="">All Account Emails</option>
+              {uniqueEmails.map((email) => (
+                <option key={email} value={email}>
+                  {email}
                 </option>
               ))}
             </select>
@@ -270,13 +284,52 @@ export default function RequestDetailsTab() {
             <Button 
               variant="ghost" 
               onClick={handleClearFilters}
-              disabled={!filters.provider && !filters.connectionId && !filters.startDate && !filters.endDate}
+              disabled={!filters.provider && !filters.accountEmail && !filters.connectionId && !filters.startDate && !filters.endDate}
               className="w-full"
             >
               Clear Filters
             </Button>
           </div>
         </div>
+
+        {uniqueEmails.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 pt-3 mt-4 border-t border-black/5 dark:border-white/5">
+            <span className="text-xs font-medium text-text-muted flex items-center gap-1 mr-1">
+              <span className="material-symbols-outlined text-[15px]">alternate_email</span>
+              Email Filter:
+            </span>
+            <button
+              type="button"
+              onClick={() => setFilters(f => ({ ...f, accountEmail: "", connectionId: "" }))}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer",
+                !filters.accountEmail
+                  ? "bg-primary text-white shadow-sm"
+                  : "bg-black/5 dark:bg-white/5 text-text-main hover:bg-black/10 dark:hover:bg-white/10"
+              )}
+            >
+              All
+            </button>
+            {uniqueEmails.map((email) => {
+              const isActive = filters.accountEmail === email;
+              return (
+                <button
+                  key={email}
+                  type="button"
+                  onClick={() => setFilters(f => ({ ...f, accountEmail: isActive ? "" : email, connectionId: "" }))}
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1 cursor-pointer",
+                    isActive
+                      ? "bg-primary text-white shadow-sm ring-1 ring-primary"
+                      : "bg-black/5 dark:bg-white/5 text-text-main hover:bg-black/10 dark:hover:bg-white/10"
+                  )}
+                >
+                  <span>{email}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       <Card padding="none">
@@ -327,9 +380,21 @@ export default function RequestDetailsTab() {
                     <td className="max-w-[200px] truncate p-4 text-sm text-text-main">
                       {detail.accountEmail || detail.accountName ? (
                         <div className="flex flex-col min-w-0">
-                          <span className="font-medium text-text-main truncate text-xs sm:text-sm" title={detail.accountEmail || detail.accountName}>
-                            {detail.accountEmail || detail.accountName}
-                          </span>
+                          {detail.accountEmail ? (
+                            <button
+                              type="button"
+                              onClick={() => setFilters(f => ({ ...f, accountEmail: detail.accountEmail, connectionId: "" }))}
+                              className="font-medium text-text-main truncate text-xs sm:text-sm text-left hover:text-primary hover:underline flex items-center gap-1 group cursor-pointer"
+                              title={`Filter by ${detail.accountEmail}`}
+                            >
+                              <span className="truncate">{detail.accountEmail}</span>
+                              <span className="material-symbols-outlined text-[13px] opacity-0 group-hover:opacity-100 text-primary transition-opacity shrink-0">filter_alt</span>
+                            </button>
+                          ) : (
+                            <span className="font-medium text-text-main truncate text-xs sm:text-sm" title={detail.accountName}>
+                              {detail.accountName}
+                            </span>
+                          )}
                           {detail.accountEmail && detail.accountName && detail.accountEmail !== detail.accountName && (
                             <span className="text-[11px] text-text-muted truncate" title={detail.accountName}>
                               {detail.accountName}
@@ -421,12 +486,24 @@ export default function RequestDetailsTab() {
                 <span className="text-text-muted">Account:</span>{" "}
                 <span className="text-text-main font-medium">
                   {selectedDetail.accountEmail || selectedDetail.accountName ? (
-                    <>
-                      {selectedDetail.accountEmail || selectedDetail.accountName}
-                      {selectedDetail.connectionId && (
-                        <span className="ml-2 font-mono text-xs text-text-muted">({selectedDetail.connectionId})</span>
+                    <span className="inline-flex items-center gap-2 flex-wrap">
+                      <span>{selectedDetail.accountEmail || selectedDetail.accountName}</span>
+                      {selectedDetail.accountEmail && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilters(f => ({ ...f, accountEmail: selectedDetail.accountEmail, connectionId: "" }));
+                            setIsDrawerOpen(false);
+                          }}
+                          className="px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-xs font-normal transition-colors cursor-pointer"
+                        >
+                          Filter by this email
+                        </button>
                       )}
-                    </>
+                      {selectedDetail.connectionId && (
+                        <span className="font-mono text-xs text-text-muted">({selectedDetail.connectionId})</span>
+                      )}
+                    </span>
                   ) : (
                     selectedDetail.connectionId || "—"
                   )}
