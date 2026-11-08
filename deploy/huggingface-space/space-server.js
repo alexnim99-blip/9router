@@ -118,6 +118,28 @@ server.on("upgrade", (request, client, head) => {
 });
 
 try {
+  try {
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const candidates = [
+      "/app/.next/server/chunks/9100.js",
+      path.join(__dirname, ".next/server/chunks/9100.js"),
+      path.join(__dirname, ".next-cli-build/server/chunks/9100.js")
+    ];
+    for (const cPath of candidates) {
+      if (fs.existsSync(cPath)) {
+        let code = fs.readFileSync(cPath, "utf8");
+        if (code.includes("enableObservability:!1")) {
+          code = code.replace(/enableObservability:!1/g, "enableObservability:!0");
+          fs.writeFileSync(cPath, code, "utf8");
+          console.log(`[SpacePatch] Enabled observability default in ${cPath}`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[SpacePatch] Non-fatal patch warning:", e.message);
+  }
+
   persistence.restore();
   const app = spawn(process.execPath, ["custom-server.js"], {
     cwd: "/app",

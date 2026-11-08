@@ -23,6 +23,13 @@ COPY src/lib/db/schema.js /app/src/lib/db/schema.js
 COPY src/lib/db/index.js /app/src/lib/db/index.js
 COPY src/lib/db/repos/responseCacheRepo.js /app/src/lib/db/repos/responseCacheRepo.js
 COPY src/sse/handlers/chat.js /app/src/sse/handlers/chat.js
+COPY src/lib/db/repos/settingsRepo.js /app/src/lib/db/repos/settingsRepo.js
+COPY src/lib/db/repos/requestDetailsRepo.js /app/src/lib/db/repos/requestDetailsRepo.js
+COPY src/lib/db/repos/usageRepo.js /app/src/lib/db/repos/usageRepo.js
+COPY src/app/api/usage/request-details/route.js /app/src/app/api/usage/request-details/route.js
+COPY src/shared/components/UsageStats.js /app/src/shared/components/UsageStats.js
+COPY src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js /app/src/app/(dashboard)/dashboard/usage/components/ProviderTopology.js
+COPY src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js /app/src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js
 
 ENV NINE_ROUTER_PERSIST_DIR=/app/persist
 
